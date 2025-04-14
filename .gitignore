@@ -4,3 +4,6 @@
 *artifacts/
 *cache/
 *.env
+
+# frontend
+frontend/src/components/*.json
