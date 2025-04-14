@@ -73,13 +73,13 @@ const Manager = () => {
       const modelBytes = await exportModelToBytes(modelRef.current);
     
       console.log('Storing model architecture on IPFS...');
-      const archIPFSHash = await storeModelOnIPFS(modelBytes);
-      // const archIPFSHash = await encStoreModelOnIPFS(modelBytes, aesKeyRef.current);
+      // const archIPFSHash = await storeModelOnIPFS(modelBytes);
+      const archIPFSHash = await encStoreModelOnIPFS(modelBytes, aesKeyRef.current);
       console.log('Done. Model architecture IPFS hash:', archIPFSHash);
 
       console.log('Storing model weights on IPFS...');
-      const weightIPFSHash = await storeWeightsOnIPFS(modelRef.current);
-      // const weightIPFSHash = await encStoreWeightsOnIPFS(modelRef.current, aesKeyRef.current);
+      // const weightIPFSHash = await storeWeightsOnIPFS(modelRef.current);
+      const weightIPFSHash = await encStoreWeightsOnIPFS(modelRef.current, aesKeyRef.current);
       console.log('Done. Model weights IPFS hash:', weightIPFSHash);
       var PID = null;
       try {
@@ -149,8 +149,8 @@ const Manager = () => {
       // Create an array of promises for parallel execution
       const promises = clientIPFSHashes.map(async (ipfsHash, index) => {
         const clientAddress = clientAddresses[index];
-        // const loadedModel = await decLoadWeightsFromIPFS(ll_model, ipfsHash, keyListRef.current.get(clientAddress));
-        const loadedModel = await loadWeightsFromIPFS(ll_model, ipfsHash);
+        const loadedModel = await decLoadWeightsFromIPFS(ll_model, ipfsHash, keyListRef.current.get(clientAddress));
+        // const loadedModel = await loadWeightsFromIPFS(ll_model, ipfsHash);
         if (!loadedModel._built) {
           await loadedModel.build();
         }
@@ -197,7 +197,7 @@ const Manager = () => {
       console.log('Evaluate model time: ', elapsedTime_45);
       
       console.log('Storing new global model weights on IPFS...');
-      const weightIPFSHash = await storeWeightsOnIPFS(ll_model);
+      // const weightIPFSHash = await storeWeightsOnIPFS(ll_model);
       
       const startTime_5 = performance.now(); // Get the current time in milliseconds
       //Dynamic key
@@ -206,7 +206,7 @@ const Manager = () => {
       const aesKey = CryptoJS.enc.Hex.parse(aesKeyStr);
       setAesKey(aesKey);
 
-      // const weightIPFSHash = await encStoreWeightsOnIPFS(ll_model, aesKey);
+      const weightIPFSHash = await encStoreWeightsOnIPFS(ll_model, aesKey);
       console.log('Done. New global model weights IPFS hash:', weightIPFSHash);
       const endTime_5 = performance.now(); // Get the current time again
       const elapsedTime_5 = endTime_5 - startTime_5; // Calculate the elapsed time

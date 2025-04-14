@@ -71,7 +71,7 @@ Download and move MNIST datasets `mnist_train.csv` and `mnist_test.csv` to `./fr
 Complete the `.env` file in `frontend/`:
 ```
 # Web3 provider URL
-REACT_APP_WEB3_PROVIDER_URL=ws://10.181.219.135:7545
+REACT_APP_WEB3_PROVIDER_URL=
 
 # Contract address
 REACT_APP_CONTRACT_ADDRESS=

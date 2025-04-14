@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import ContractArtifact from "./EncFederatedLearningDeployment#EncFederatedLearningContract.json";
-import { loadMNISTDataset, trainModel, loadModelFromIPFS, storeWeightsOnIPFS, loadWeightsFromIPFS, loadPrivateKeyFromHex, generateECDHKeyPair } from './utils';
+import { loadMNISTDataset, trainModel, loadModelFromIPFS, storeWeightsOnIPFS, loadWeightsFromIPFS, decLoadModelFromIPFS, encStoreWeightsOnIPFS, decLoadWeightsFromIPFS, loadPrivateKeyFromHex, loadPublicKeyFromHex, generateECDHKeyPair, decryptMessage } from './utils';
+import CryptoJS, { enc } from 'crypto-js';
 
 const Client = () => {
 
@@ -14,6 +15,8 @@ const Client = () => {
 
     const [model, setModel] = useState(null);
     const [IPFSHash, setIPFSHash] = useState(null);
+
+    const [sharedKey, setSharedKey] = useState(null);
 
     const [ECDHPrivateKeyString, ECDHPublicKeyString] = generateECDHKeyPair();
     const ECDHPrivateKey = loadPrivateKeyFromHex(ECDHPrivateKeyString);
@@ -57,6 +60,8 @@ const Client = () => {
       try {
         console.log("Joining project...");
         const project = projectId;
+        const clientAddress = await myAccount.getAddress();
+        console.log("Client Address:", clientAddress);
 
         if(model==null){
           const fee = await contract.beforeJoin(projectId);
@@ -71,11 +76,41 @@ const Client = () => {
         }
         // console.log(rc);
 
+        var local_sharedKey = sharedKey;
+        var aesKey = null;
+
+        if(local_sharedKey==null){
+          const serverPublicKeyString = await contract.getMainPK(project);
+          console.log("serverPublicKeyString:", serverPublicKeyString);
+          const serverPublicKey = loadPublicKeyFromHex(serverPublicKeyString);
+          const sharedSecret = ECDHPrivateKey.derive(serverPublicKey.getPublic());
+          local_sharedKey = CryptoJS.enc.Hex.parse(sharedSecret.toString(16));
+          setSharedKey(local_sharedKey);
+        }
+
+        await new Promise((resolve) => {
+          contract.on('EncryptedKey', async (clientAddr, projId, _, encryptedKey) => {
+            console.log('EncryptedKey event received');
+            if (String(clientAddr) !== String(clientAddress) || Number(projId) !== Number(project)) {
+              console.log('Event is not for me or this project.', clientAddr, Number(projId));
+              return;
+            } else {
+              console.log("encryptedKey:", encryptedKey);
+              const aesKeyStr = decryptMessage(encryptedKey, local_sharedKey);
+              aesKey = CryptoJS.enc.Hex.parse(aesKeyStr);
+              console.log('AES Key:', aesKey);
+              contract.removeAllListeners('EncryptedKey');
+              resolve(); // Resolve the promise when the event is handled
+            }
+          });
+        });
+
         var local_model = model;
         if(model==null){
           console.log('Loading model architecture from IPFS...');
           const archIPFSHash = await contract.participateReturn(project);
-          local_model = await loadModelFromIPFS(archIPFSHash);
+          // local_model = await loadModelFromIPFS(archIPFSHash);
+          local_model = await decLoadModelFromIPFS(archIPFSHash, aesKey);
           setModel(local_model);
           console.log('Done.');
         }
@@ -83,11 +118,9 @@ const Client = () => {
         console.log('Loading model weights from IPFS...');
         const weightsIPFSHash = await contract.joinReturn(project);
         console.log(weightsIPFSHash);
-        local_model = await loadWeightsFromIPFS(local_model, weightsIPFSHash);
-        console.log('Done.');
-        // setModel(local_model);
-        // console.log(local_model);
-      
+        // local_model = await loadWeightsFromIPFS(local_model, weightsIPFSHash);
+        local_model = await decLoadWeightsFromIPFS(local_model, weightsIPFSHash, aesKey);
+        console.log('Done.');      
 
         if (!local_model) {
           console.error('No model to train.');
@@ -99,7 +132,8 @@ const Client = () => {
         console.log('Done.');
 
         console.log('Storing local model weights on IPFS...');
-        const weightIPFSHash = await storeWeightsOnIPFS(local_model);
+        // const weightIPFSHash = await storeWeightsOnIPFS(local_model);
+        const weightIPFSHash = await encStoreWeightsOnIPFS(local_model, local_sharedKey);
         console.log('Done. New model weights stored on IPFS with hash:', weightIPFSHash);
         setIPFSHash(weightIPFSHash);
         // setModel(local_model);

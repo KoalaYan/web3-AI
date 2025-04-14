@@ -100,14 +100,14 @@ export async function decLoadModelFromIPFS(ipfsHash, aesKey) {
     offset += chunk.length;
   }
   const encryptedData = new TextDecoder().decode(combinedData);
-
+  
   // Decrypt the data using the AES key
-  // const decryptedData = CryptoJS.AES.decrypt(encryptedData, aesKey, {mode:CryptoJS.mode.ECB}).toString(CryptoJS.enc.Utf8);
+  const start_time = performance.now();
   const decryptedData = decryptMessage(encryptedData, aesKey);
+  const end_time = performance.now();
+  console.log("Decryption time is ", end_time - start_time);
 
-  // Decode the Uint8Array as text
-  const modelJSON = new TextDecoder().decode(decryptedData);
-  const model = await tf.models.modelFromJSON(JSON.parse(modelJSON));
+  const model = await tf.models.modelFromJSON(JSON.parse(decryptedData));
   return model;
 }
 
@@ -128,7 +128,6 @@ export async function decLoadWeightsFromIPFS(model, ipfsHash, aesKey) {
   const encryptedData = new TextDecoder().decode(combinedData);
 
   // Decrypt the data using the AES key
-  // const decryptedData = CryptoJS.AES.decrypt(encryptedData, aesKey, {mode:CryptoJS.mode.ECB}).toString(CryptoJS.enc.Utf8);
   const start_time = performance.now();
   const decryptedData = decryptMessage(encryptedData, aesKey);
   const end_time = performance.now();
