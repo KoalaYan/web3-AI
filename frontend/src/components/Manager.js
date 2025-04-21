@@ -2,29 +2,26 @@ import React, { useState, useEffect, useRef } from 'react';
 import * as tf from '@tensorflow/tfjs';
 import ContractArtifact from "./EncFederatedLearningDeployment#EncFederatedLearningContract.json";
 
-import { saveWeight, loadWeight, aggregate, loadMNISTDataset, evaluateModel, storeWeightsOnIPFS, loadWeightsFromIPFS, storeModelOnIPFS, exportModelToBytes, encStoreModelOnIPFS, encStoreWeightsOnIPFS, decLoadWeightsFromIPFS, generateRandomKey, loadPrivateKeyFromHex, loadPublicKeyFromHex, encryptMessage, decryptMessage, dtree, generateECDHKeyPair } from './utils';
+import { waitForTransaction, saveWeight, loadWeight, aggregate, loadMNISTDataset, evaluateModel, storeWeightsOnIPFS, loadWeightsFromIPFS, storeModelOnIPFS, exportModelToBytes, encStoreModelOnIPFS, encStoreWeightsOnIPFS, decLoadWeightsFromIPFS, generateRandomKey, loadPrivateKeyFromHex, loadPublicKeyFromHex, encryptMessage, decryptMessage, dtree, generateECDHKeyPair } from './utils';
 import ModelUploader from './ModelUploader';
-import Web3 from 'web3';
 import CryptoJS, { enc } from 'crypto-js';
-import{ Mutex } from 'async-mutex';
+const { ethers } = require('ethers');
 
 const Manager = () => {
-  const web3 = new Web3(new Web3.providers.WebsocketProvider(process.env.REACT_APP_WEB3_PROVIDER_URL));
-  const [projectId, setprojectId] = useState(null);
+    const provider = new ethers.WebSocketProvider(process.env.REACT_APP_WEB3_PROVIDER_URL);
+    const signer = new ethers.Wallet(process.env.REACT_APP_PRIVATE_KEY, provider);
+    const contractABI = ContractArtifact.abi;
+    const contractAddress = process.env.REACT_APP_CONTRACT_ADDRESS;
+    const contract = new ethers.Contract(contractAddress, contractABI, signer);
+
+    const [projectId, setprojectId] = useState(null);
     const [projectIdTxt, setprojectIdTxt] = useState("");
     const [isLoopRunning, setIsLoopRunning] = useState(false);
     const [loopIntervalId, setLoopIntervalId] = useState(null);
     const [model, setModel] = useState(null);
     const [local_model, setLocalModel] = useState(null);
     const [keyList, setKeyList] = useState(new Map());
-    const mutex = new Mutex();
-
-    const wallet_private_key = process.env.REACT_APP_PRIVATE_KEY;
-    const walletAddress = process.env.REACT_APP_WALLET_ADDRESS;
-
-    const contractABI = ContractArtifact.abi;
-    const contractAddress = process.env.REACT_APP_CONTRACT_ADDRESS;
-    const contract = new web3.eth.Contract(contractABI, contractAddress, {from: walletAddress});
+    // const mutex = new Mutex();
 
     const [ECDHPrivateKeyString, ECDHPublicKeyString] = generateECDHKeyPair();
     const ECDHPrivateKey = loadPrivateKeyFromHex(ECDHPrivateKeyString);
@@ -64,6 +61,8 @@ const Manager = () => {
     }, [keyList]);
 
     const handleCreate = async () => {
+      console.log("ECDHPrivateKeyString: ", ECDHPrivateKeyString);
+      console.log("ECDHPublicKeyString: ", ECDHPublicKeyString);
       const aesKeyStr = generateRandomKey();
       console.log('AES key is ', typeof aesKeyStr, aesKeyStr)
       const aesKey = CryptoJS.enc.Hex.parse(aesKeyStr);
@@ -84,25 +83,12 @@ const Manager = () => {
       var PID = null;
       try {
         setprojectIdTxt("Creating Project...");
-        const transactionObject = {
-          to: contractAddress,
-          data: contract.methods.create(archIPFSHash, weightIPFSHash, 10, ECDHPublicKeyString).encodeABI(),
-          chainId: 1337,
-          gas: 2000000,
-          gasPrice: web3.utils.toWei('2', 'gwei'), // Adjust gas price as needed
-          nonce: await web3.eth.getTransactionCount(walletAddress),
-        };
-        // Sign the transaction
-        const signedTransaction = await web3.eth.accounts.signTransaction(
-          transactionObject,
-          wallet_private_key
-        );
-        // Send the signed transaction
-        const receipt = await web3.eth.sendSignedTransaction(signedTransaction.rawTransaction);
-        console.log('Transaction receipt:', receipt);
+        console.log('Creating project on blockchain...');
+        const tx = await contract.create(archIPFSHash, weightIPFSHash, 10, ECDHPublicKeyString, {gaslimit: 2000000, gasPrice: ethers.parseUnits('10', 'gwei')}); //value: ethers.parseEther('1', 'ether'), 
+        await waitForTransaction(tx);
+        console.log('Done. Project created on blockchain.');       
 
-        // console.log(rc);
-        const pid = await contract.methods.createReturn().call();
+        const pid = await contract.createReturn();
         PID = parseInt(pid.toString());
         // console.log(PID);
         setprojectId(PID);
@@ -113,27 +99,15 @@ const Manager = () => {
       }
       return PID;
     };
-  
-    const handleAggregate = async () => {
-      var listener = contract.events.LocalTrainingFinished({
-        fromBlock: 'latest',
-      }, ()=>{})
-
-      listener.on('data', async function(event){
-          await Aggregate();
-      });
-
-      listener.removeAllListeners('data');
-    };
-      
+        
     const Aggregate = async () => {
       var weightsArrList = [];
       var ll_model = local_modelRef.current;
 
       const startTime_1 = performance.now(); // Get the current time in milliseconds
       console.log("Getting client IPFS hashes...");
-      const clientIPFSHashes = await contract.methods.getLocalModels(projectIdRef.current).call();
-      const clientAddresses = await contract.methods.getTrainers(projectIdRef.current).call();
+      const clientIPFSHashes = await contract.getLocalModels(projectIdRef.current);
+      const clientAddresses = await contract.getTrainers(projectIdRef.current);
       console.log(clientIPFSHashes.length, 'client IPFS hashes found.');
       const endTime_1 = performance.now(); // Get the current time again
       const elapsedTime_1 = endTime_1 - startTime_1; // Calculate the elapsed time
@@ -215,24 +189,8 @@ const Manager = () => {
       const startTime_6 = performance.now(); // Get the current time in milliseconds
       console.log("Updating global model on blockchain...");
       const incentiveFees = Array(clientIPFSHashes.length).fill(1);
-      const transactionObject = {
-        to: contractAddress,
-        data: contract.methods.updateGlobalModel(projectIdRef.current, weightIPFSHash, incentiveFees).encodeABI(),
-        chainId: 1337,
-        gas: 2000000,
-        gasPrice: web3.utils.toWei('2', 'gwei'), // Adjust gas price as needed
-        nonce: await web3.eth.getTransactionCount(walletAddress),
-      };
-      // Sign the transaction
-      const signedTransaction = await web3.eth.accounts.signTransaction(
-        transactionObject,
-        wallet_private_key
-      );
-      // Send the signed transaction
-      const receipt = await web3.eth.sendSignedTransaction(signedTransaction.rawTransaction);
-      // console.log('Transaction receipt:', receipt);
-      // console.log(rc);
-      // console.log('Done.');
+      const tx = await contract.updateGlobalModel(projectIdRef.current, weightIPFSHash, incentiveFees);
+      await waitForTransaction(tx);
       const endTime_6 = performance.now(); // Get the current time again
       const elapsedTime_6 = endTime_6 - startTime_6; // Calculate the elapsed time
       console.log('Done. Update global model on blockchain time: ', elapsedTime_6);
@@ -240,71 +198,23 @@ const Manager = () => {
     }
 
     const Continue = async (continueFlag) => {
-      const transactionObject_2 = {
-        to: contractAddress,
-        data: contract.methods.whetherContinue(projectIdRef.current, continueFlag).encodeABI(),
-        chainId: 1337,
-        gas: 2000000,
-        gasPrice: web3.utils.toWei('2', 'gwei'), // Adjust gas price as needed
-        nonce: await web3.eth.getTransactionCount(walletAddress),
-      };
-      // Sign the transaction
-      const signedTransaction_2 = await web3.eth.accounts.signTransaction(
-        transactionObject_2,
-        wallet_private_key
-      );
-      // Send the signed transaction
-      const receipt_2 = await web3.eth.sendSignedTransaction(signedTransaction_2.rawTransaction);
-      // console.log('Transaction receipt:', receipt_2);
-      // console.log(rc);
+      const tx = await contract.whetherContinue(projectIdRef.current, continueFlag);
+      await waitForTransaction(tx);
       console.log('Done.');
     };
 
     const handleSettling = async () => {
       console.log('Settling...');
-      const totalBilling = await contract.methods.billingsReturn(projectIdRef.current).call();
+      const totalBilling = await contract.billingsReturn(projectIdRef.current);
       const ince = 0.1* parseInt(totalBilling.toString());
       console.log("Billing is ", totalBilling);
-      const transactionObject = {
-        to: contractAddress,
-        data: contract.methods.whetherContinue(projectIdRef.current, false).encodeABI(),
-        chainId: 1337,
-        gas: 2000000,
-        gasPrice: web3.utils.toWei('2', 'gwei'), // Adjust gas price as needed
-        nonce: await web3.eth.getTransactionCount(walletAddress),
-      };
-
-      // Sign the transaction
-      const signedTransaction = await web3.eth.accounts.signTransaction(
-        transactionObject,
-        wallet_private_key
-      );
-      // Send the signed transaction
-      const receipt = await web3.eth.sendSignedTransaction(signedTransaction.rawTransaction);
-      // console.log('Transaction receipt:', receipt);
-
-
-      const transactionObject_2 = {
-        to: contractAddress,
-        data: contract.methods.settleBillings(projectIdRef.current).encodeABI(),
-        chainId: 1337,
-        gas: 2000000,
-        gasPrice: web3.utils.toWei('2', 'gwei'), // Adjust gas price as needed
-        nonce: await web3.eth.getTransactionCount(walletAddress),
-        value: web3.utils.toWei(ince.toString(), 'ether')
-      };
-      // Sign the transaction
-      const signedTransaction_2 = await web3.eth.accounts.signTransaction(
-        transactionObject_2,
-        wallet_private_key
-      );
-      // Send the signed transaction
-      const receipt_2 = await web3.eth.sendSignedTransaction(signedTransaction_2.rawTransaction);
-      // console.log('Transaction receipt:', receipt_2);
-      
-      // console.log(rc);
+      const tx = await contract.whetherContinue(projectIdRef.current, false);
+      await waitForTransaction(tx);
       console.log('Done.');
 
+      const tx_2 = await contract.settleBillings(projectIdRef.current, {value: ethers.parseEther(ince.toString())});
+      await waitForTransaction(tx_2);
+      console.log('Done.');
     };
 
     const handleUploadedModel = async(fileContent) => {
@@ -333,31 +243,19 @@ const Manager = () => {
         newKeyList.set(clientAddress, sharedKey);
         setKeyList(newKeyList);
       }
+      console.log('Shared key is ', sharedKey.toString());
       console.log('Be encrypted key is ', aesKeyRef.current.toString());
       const encryptedKey = encryptMessage(aesKeyRef.current.toString(), sharedKey);
-      // console.log('Encrypted key is ', encryptedKey);
+      console.log('Encrypted key is ', encryptedKey);
 
-      const release = await mutex.acquire();
+      // const release = await mutex.acquire();
       try {
         console.log('Updating encrypted key on blockchain...');
-        const transactionObject = {
-          to: contractAddress,
-          data: contract.methods.updateEncryptedKey(projectIdRef.current, clientAddress, encryptedKey).encodeABI(),
-          chainId: 1337,
-          gas: 2000000,
-          gasPrice: web3.utils.toWei('2', 'gwei'), // Adjust gas price as needed
-          nonce: await web3.eth.getTransactionCount(walletAddress),
-        };
-
-        // Sign the transaction
-        const signedTransaction = await web3.eth.accounts.signTransaction(
-          transactionObject,
-          wallet_private_key
-        );
-        // Send the signed transaction
-        const receipt = await web3.eth.sendSignedTransaction(signedTransaction.rawTransaction);
+        const tx = await contract.updateEncryptedKey(projectIdRef.current, clientAddress, encryptedKey);
+        await waitForTransaction(tx);
+        console.log('Done. Encrypted key updated on blockchain.');
       } finally {
-        release();
+        // release();
       }
     };
 
@@ -376,44 +274,42 @@ const Manager = () => {
       const PID = await handleCreate();
       console.log('Listening started. PID: ', PID);
       let test_acc = 0;
-      var llistener = contract.events.allEvents({ // allEvents
-        fromBlock: 'latest',
-      }, ()=>{})
       
-      llistener.on('data', async function(event){
-        console.log(event.event);
-        if (event.event !== 'LocalTrainingFinished' && event.event !== 'AchieveKey'){
-          console.log('Event is not LocalTrainingFinished or AchieveKey');
+      contract.on('LocalTrainingFinished', async (_, projId, it) => {
+        console.log('Event: LocalTrainingFinished');
+      
+        if (Number(projId) !== PID) {
+          console.log('Event is not for this project', projId);
           return;
         }
-        if (Number(event.returnValues[1]) !== PID){
-          console.log('Event is not for this project', Number(event.returnValues[1]));
+      
+        test_acc = await Aggregate();
+        console.log('Testing acc: ', test_acc);
+      
+        if (!isLoopRunningRef.current) {
+          await Continue(false);
+          await handleSettling();
+        } else {
+          await Continue(true);
+        }
+      });
+
+      contract.on('AchieveKey', async (clientAddr, projId, _, clientPK) => {
+        console.log('Event: AchieveKey');
+      
+        if (Number(projId) !== PID) {
+          console.log('Event is not for this project', projId);
           return;
         }
-        
-        console.log('Event is ', event.event); // same results as the optional callback above
-        if (event.event === 'LocalTrainingFinished'){
-          test_acc = await Aggregate();
-          console.log('Testing acc: ', test_acc);
-          if (!isLoopRunningRef.current) {
-            llistener.removeAllListeners('data');
-            await Continue(false);
-            await handleSettling();
-          }
-          else{
-            await Continue(true);
-          }
-        } else if (event.event === 'AchieveKey'){
-          // console.log(event.returnValues[0]);
-          // Measure the execution time
-          const startTime = performance.now(); // Get the current time in milliseconds
-          await handleEncryptKey(event.returnValues[0], event.returnValues[3]);
-          const endTime = performance.now(); // Get the current time again
-          // Calculate the elapsed time
-          const elapsedTime = endTime - startTime;
-          console.log('Encrypt key time: ', elapsedTime);
-        }
-      })
+      
+        const startTime = performance.now();
+        console.log('Client address:', clientAddr);
+        console.log('Client public key:', clientPK);
+        await handleEncryptKey(clientAddr, clientPK);
+        const endTime = performance.now();
+        const elapsedTime = endTime - startTime;
+        console.log('Encrypt key time: ', elapsedTime);
+      });
     };
 
     return (

@@ -16,7 +16,7 @@
     "crypto-js": "^4.1.1",
     "ec-key": "^0.0.4",
     "eckey-utils": "^0.7.13",
-    "ethers": "^6.7.1",
+    "ethers": "^6.13.0",
     "fs": "^0.0.1-security",
     "ipfs-http-client": "^60.0.1",
     "js-crypto-key-utils": "^1.0.6",
@@ -28,7 +28,7 @@
     "stream-browserify": "^3.0.0",
     "utils": "^0.3.1",
     "web-vitals": "^2.1.4",
-    "web3": "^4.1.1"
+    "web3": "^4.7.0"
   },
   "scripts": {
     "start": "react-scripts start",

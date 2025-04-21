@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ContractArtifact from "./EncFederatedLearningDeployment#EncFederatedLearningContract.json";
-import { loadMNISTDataset, trainModel, loadModelFromIPFS, storeWeightsOnIPFS, loadWeightsFromIPFS, decLoadModelFromIPFS, encStoreWeightsOnIPFS, decLoadWeightsFromIPFS, loadPrivateKeyFromHex, loadPublicKeyFromHex, generateECDHKeyPair, decryptMessage } from './utils';
+import { waitForTransaction, loadMNISTDataset, trainModel, loadModelFromIPFS, storeWeightsOnIPFS, loadWeightsFromIPFS, decLoadModelFromIPFS, encStoreWeightsOnIPFS, decLoadWeightsFromIPFS, loadPrivateKeyFromHex, loadPublicKeyFromHex, generateECDHKeyPair, decryptMessage } from './utils';
 import CryptoJS, { enc } from 'crypto-js';
+const { ethers } = require('ethers');
 
 const Client = () => {
 
     const [message, setMessage] = useState("");
     const [myAccount, setAccount] = useState("");
     const [projectId, setInputValue_1] = useState('');
-    const ethers = require('ethers');
 
     const [provider, setProvider] = useState(null);
     const [contract, setContract] = useState(null);
@@ -57,24 +57,15 @@ const Client = () => {
     };
 
     const handleJoin = async () => {
+      console.log("ECDHPrivateKeyString: ", ECDHPrivateKeyString);
+      console.log("ECDHPublicKeyString: ", ECDHPublicKeyString);
       try {
+        const projectIdCounter = await contract.projectIdCounter();
+        console.log("Project ID Counter:", projectIdCounter);
         console.log("Joining project...");
         const project = projectId;
         const clientAddress = await myAccount.getAddress();
         console.log("Client Address:", clientAddress);
-
-        if(model==null){
-          const fee = await contract.beforeJoin(projectId);
-          const fees = ethers.parseUnits((Number(fee) * 0.1).toString(), 'ether');
-          const tx = await contract.join(project, ECDHPublicKeyString, {value: fees});
-          const rc = await tx.wait();
-        }
-        else{
-          // const tx = await contract.join(project);
-          const tx = await contract.join(project, ECDHPublicKeyString);
-          const rc = await tx.wait();
-        }
-        // console.log(rc);
 
         var local_sharedKey = sharedKey;
         var aesKey = null;
@@ -88,6 +79,19 @@ const Client = () => {
           setSharedKey(local_sharedKey);
         }
 
+        if(model==null){
+          const fee = await contract.beforeJoin(projectId);
+          const fees = ethers.parseUnits((Number(fee) * 0.1).toString(), 'ether');
+          const tx = await contract.join(project, ECDHPublicKeyString, {value: fees});
+          // await waitForTransaction(tx);
+          // console.log("Join project finished.");
+        }
+        else{
+          const tx = await contract.join(project, ECDHPublicKeyString);
+          // await waitForTransaction(tx);
+          // console.log("Join project finished.");
+        }
+
         await new Promise((resolve) => {
           contract.on('EncryptedKey', async (clientAddr, projId, _, encryptedKey) => {
             console.log('EncryptedKey event received');
@@ -95,12 +99,14 @@ const Client = () => {
               console.log('Event is not for me or this project.', clientAddr, Number(projId));
               return;
             } else {
+              console.log("sharedKey:", local_sharedKey.toString());
               console.log("encryptedKey:", encryptedKey);
               const aesKeyStr = decryptMessage(encryptedKey, local_sharedKey);
+              console.log("aesKeyStr:", aesKeyStr);
               aesKey = CryptoJS.enc.Hex.parse(aesKeyStr);
               console.log('AES Key:', aesKey);
               contract.removeAllListeners('EncryptedKey');
-              resolve(); // Resolve the promise when the event is handled
+              resolve();
             }
           });
         });
@@ -160,10 +166,8 @@ const Client = () => {
 
         console.log("Upload local model to Blockchain...");
         const tx = await contract.local_upload(project, weightIPFSHash);
-        const rc = await tx.wait();
-        // console.log(rc);
-        // console.log("Local model uploading finished.");
-        console.log('Done.');
+        await waitForTransaction(tx);
+        console.log("Local model uploading finished.");
 
         // TODO : Use smart contract to send ipfs address
       } catch (error) {

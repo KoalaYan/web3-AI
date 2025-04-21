@@ -57,9 +57,19 @@ export function generateRandomKey() {
   return aesKeyHex;
 }
 
+export async function waitForTransaction(tx) {
+  console.log('Waiting for transaction to be mined...');
+  let confirmations = 0;
+  while (confirmations < 1) {
+    confirmations = await tx.confirmations();
+    await new Promise(resolve => setTimeout(resolve, 100)); // Wait for 1 second before checking again
+  }
+  console.log('Transaction mined:', tx.hash);
+  return confirmations;
+}
+
 export async function encStoreModelOnIPFS(modelBytes, aesKey) {
   // Encrypt data
-  // const encryptedData = CryptoJS.AES.encrypt(modelBytes, aesKey,{mode:CryptoJS.mode.ECB}).toString();
   const encryptedData = encryptMessage(modelBytes, aesKey);
 
   const result = await IPFS.add(encryptedData);
@@ -73,7 +83,6 @@ export async function encStoreWeightsOnIPFS(model, aesKey) {
   const jsonData = JSON.stringify(serializedData);
 
   // Encrypt data
-  // const encryptedData = CryptoJS.AES.encrypt(jsonData, aesKey,{mode:CryptoJS.mode.ECB}).toString();
   const start_time = performance.now();
   const encryptedData = encryptMessage(jsonData, aesKey);
   const end_time = performance.now();
