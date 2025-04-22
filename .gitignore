@@ -7,3 +7,8 @@
 
 # frontend
 frontend/src/components/*.json
+
+# emulator
+__pycache__/
+*.pyc
+emulator/*.json
