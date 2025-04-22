@@ -5,6 +5,7 @@ import ContractArtifact from "./EncFederatedLearningDeployment#EncFederatedLearn
 import { waitForTransaction, saveWeight, loadWeight, aggregate, loadMNISTDataset, evaluateModel, storeWeightsOnIPFS, loadWeightsFromIPFS, storeModelOnIPFS, exportModelToBytes, encStoreModelOnIPFS, encStoreWeightsOnIPFS, decLoadWeightsFromIPFS, generateRandomKey, loadPrivateKeyFromHex, loadPublicKeyFromHex, encryptMessage, decryptMessage, dtree, generateECDHKeyPair } from './utils';
 import ModelUploader from './ModelUploader';
 import CryptoJS, { enc } from 'crypto-js';
+import{ Mutex } from 'async-mutex';
 const { ethers } = require('ethers');
 
 const Manager = () => {
@@ -21,7 +22,7 @@ const Manager = () => {
     const [model, setModel] = useState(null);
     const [local_model, setLocalModel] = useState(null);
     const [keyList, setKeyList] = useState(new Map());
-    // const mutex = new Mutex();
+    const mutex = new Mutex();
 
     const [ECDHPrivateKeyString, ECDHPublicKeyString] = generateECDHKeyPair();
     const ECDHPrivateKey = loadPrivateKeyFromHex(ECDHPrivateKeyString);
@@ -248,14 +249,14 @@ const Manager = () => {
       const encryptedKey = encryptMessage(aesKeyRef.current.toString(), sharedKey);
       console.log('Encrypted key is ', encryptedKey);
 
-      // const release = await mutex.acquire();
+      const release = await mutex.acquire();
       try {
         console.log('Updating encrypted key on blockchain...');
         const tx = await contract.updateEncryptedKey(projectIdRef.current, clientAddress, encryptedKey);
         await waitForTransaction(tx);
         console.log('Done. Encrypted key updated on blockchain.');
       } finally {
-        // release();
+        release();
       }
     };
 
