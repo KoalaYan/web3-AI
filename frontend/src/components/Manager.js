@@ -230,7 +230,7 @@ const Manager = () => {
       setLocalModel(ll_model);
     };
 
-    const handleEncryptKey = async (clientAddress, clientPK) => {
+    const handleEncryptKey = async (contract, clientAddress, clientPK) => {
       // const aesKey = aesKeyRef.current;
       var sharedKey = null;
       if (keyListRef.current.has(clientAddress)){
@@ -249,14 +249,13 @@ const Manager = () => {
       const encryptedKey = encryptMessage(aesKeyRef.current.toString(), sharedKey);
       console.log('Encrypted key is ', encryptedKey);
 
-      const release = await mutex.acquire();
       try {
         console.log('Updating encrypted key on blockchain...');
         const tx = await contract.updateEncryptedKey(projectIdRef.current, clientAddress, encryptedKey);
         await waitForTransaction(tx);
         console.log('Done. Encrypted key updated on blockchain.');
       } finally {
-        release();
+        // release();
       }
     };
 
@@ -303,13 +302,15 @@ const Manager = () => {
           return;
         }
       
-        const startTime = performance.now();
         console.log('Client address:', clientAddr);
         console.log('Client public key:', clientPK);
-        await handleEncryptKey(clientAddr, clientPK);
+        const release = await mutex.acquire();
+        const startTime = performance.now();
+        await handleEncryptKey(contract, clientAddr, clientPK);
         const endTime = performance.now();
         const elapsedTime = endTime - startTime;
         console.log('Encrypt key time: ', elapsedTime);
+        release();
       });
     };
 
