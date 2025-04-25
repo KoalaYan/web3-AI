@@ -15,6 +15,14 @@ const Manager = () => {
     const contractAddress = process.env.REACT_APP_CONTRACT_ADDRESS;
     const contract = new ethers.Contract(contractAddress, contractABI, signer);
 
+    const [currentContract, setCurrentContract] = useState(contract);
+    const contractRef = useRef(contract);
+
+    // 每次状态更新时也更新 ref
+    useEffect(() => {
+      contractRef.current = currentContract;
+    }, [currentContract]);
+
     const [projectId, setprojectId] = useState(null);
     const [projectIdTxt, setprojectIdTxt] = useState("");
     const [isLoopRunning, setIsLoopRunning] = useState(false);
@@ -302,15 +310,21 @@ const Manager = () => {
           return;
         }
       
-        console.log('Client address:', clientAddr);
-        console.log('Client public key:', clientPK);
-        const release = await mutex.acquire();
-        const startTime = performance.now();
-        await handleEncryptKey(contract, clientAddr, clientPK);
-        const endTime = performance.now();
-        const elapsedTime = endTime - startTime;
-        console.log('Encrypt key time: ', elapsedTime);
-        release();
+        const release = await mutex.acquire(); // 确保只有一个回调函数能执行
+        console.log('Mutex acquired');
+        try {
+            const startTime = performance.now();
+            console.log("Encrypting key...");
+            await handleEncryptKey(contractRef.current, clientAddr, clientPK);
+            console.log('Done. Encrypted key updated on blockchain.');
+            const endTime = performance.now();
+            const elapsedTime = endTime - startTime;
+            console.log('Encrypt key time: ', elapsedTime);
+            setCurrentContract(contract);
+        } finally {
+            release(); // 释放锁
+            console.log('Mutex released');
+        }
       });
     };
 
@@ -343,3 +357,4 @@ const Manager = () => {
 };
 
 export default Manager;
+
