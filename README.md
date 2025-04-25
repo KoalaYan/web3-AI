@@ -138,3 +138,5 @@ PRIVATE_KEY=
 
 ```
 
+
+Copy json file in `./hardhat/ignition/deployments/xxx/artifacts/` to directory `./emulator/`.
